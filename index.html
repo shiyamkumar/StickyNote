@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+      <script type="text/javascript" src="https://code.jquery.com/jquery-1.10.2.js"></script>
+      <link rel="stylesheet" type="text/css" href="https://code.jquery.com/ui/1.11.4/themes/smoothness/jquery-ui.css">
+      <script type="text/javascript" src="https://code.jquery.com/ui/1.11.4/jquery-ui.js"></script>
+  <style type="text/css">
+	.stickyNote{
+	  width:200px;
+	  height:200px;
+	  resize:both;
+	  background-color:rgba(0,0,0,0.05);
+	  position:absolute;
+	  z-index:1;
+	  box-shadow:0 0 5px #000;
+	  min-width:150px;
+	  min-height:150px;
+	}
+	.addNew{
+	  position:relative;
+	  top:0px;
+	  left:0px;
+	  padding:5px;
+	  cursor:pointer;
+	  float:left;
+	}
+	.deleteNote{
+	  position:relative;
+	  top:0px;
+	  right:0px;
+	  padding:5px;
+	  cursor:pointer;
+	  float:right;
+	}
+	.editorArea{
+	  height:87%;
+	  overflow-y:auto;
+	  overflow-x:hidden;
+	  padding:5px;
+	  outline: none;
+	  background-color: inherit;
+	  border: none;
+	}
+	.stickyHeader{
+	  padding:5px;
+	  background-color:rgba(0,0,0,0.05);
+	  cursor:move;
+	}
+	#customContextMenu{
+		padding:0;
+		margin:0;
+		box-shadow:2px 2px 2px #999;
+	    border:1px solid #ccc;
+		display:none;
+		position: absolute;
+		z-index:10;
+		background-color:#eee;
+		font-size: 13px;
+	}
+	#customContextMenu li{
+		cursor:pointer;
+		list-style-type:none;
+		padding:5px 10px;
+	}
+	#customContextMenu li:hover{
+		background-color:#ccc;
+		background-color:[data-type];
+	}
+	.disabled{
+		pointer-events:none;
+		opacity:0.5;
+	}
+  </style>
+  <title>Sticky Node - LocalStorage by shiyam</title>
+<script type="text/javascript">
+var selectedNode;
+$(function(){	
+	selectedNode = $(".stickyNote:first");
+	var copyClone = selectedNode[0].outerHTML,
+		heightDiff = 50,
+		widthDiff = 20,
+		defaultTitle = "Sticky Node",
+		defaultColor = "0,0,0",
+		bgOpacity = "0.05";
+	$(".stickyNote:first").attr("data-id", UUID() );
+	$(".stickyNote:first").attr("data-color", defaultColor );
+	
+	hideClickedElseWhere( $("#customContextMenu") );
+	$("#wrapper").on("click", ".addNew", function(){
+		var stickyClone = $(copyClone);
+		stickyClone.find(".editorArea").html("");
+		stickyClone.css({"left":"30px", "top":"30px"});
+		stickyClone.attr("data-id", UUID() );
+		$("#wrapper").append(stickyClone);
+		stickyInit();
+		cssInit();
+	})
+	.on("click", ".deleteNote", function(e){	
+		if( $("#wrapper").find(".stickyNote").length > 1 ){
+			$(this).parents(".stickyNote").addClass("removeNote");
+			storeLocally(e);
+			$(this).parents(".stickyNote").remove();
+		}
+		else{
+			alert("Can't Delete the last Note");
+		}
+	})
+	.on("click", ".stickyNote", function(){	
+		selectedNode = $(this);
+	})
+	.on("paste", ".stickyNote", function(e){	
+		 e.preventDefault();
+		var text = (e.originalEvent || e).clipboardData.getData('text/plain');
+		console.log(text);		
+		window.document.execCommand('insertText', false, text);
+		storeLocally(selectedNode[0]);
+	})
+	.on("contextmenu", ".stickyNote", function(e){	
+		selectedNode = $(this);
+		$("#customContextMenu").show()
+			.css({"top":e.pageY+'px' ,"left":e.pageX+'px' });
+		return false;
+	})
+	.on("keypress", ".editorArea", throttle(function(e){
+		storeLocally(e);
+	}));
+	$("#customContextMenu").click(function(){
+		$(this).hide();
+	});
+	$("#contextMenuTitle").click(function(){	
+		var oldTitle = selectedNode.find(".stickyHeader").text();
+		var thisTitle = prompt("Type note title", oldTitle) || oldTitle;
+		selectedNode.find(".stickyHeader").text(thisTitle);
+		storeLocally(selectedNode[0]);
+	});
+	$(".contextMenuColor").click(function(){
+		var thisType = $(this).attr("data-type");
+		selectedNode.attr("data-color", thisType ).css("background-color", thisType);
+		storeLocally(selectedNode[0]);
+	});
+	$("#contextMenuSelect").click(selectAll);
+	$("#contextMenuDelete").click(function(){
+	/*http://stackoverflow.com/a/15335961/4827853*/
+		replaceSelectedText("");
+		storeLocally(selectedNode[0]);
+	});
+	$("#contextMenuCut").click(function(){
+		document.execCommand('cut');
+		storeLocally(selectedNode[0]);
+	});
+	$("#contextMenuCopy").click(function(){
+		document.execCommand('copy');
+		storeLocally(selectedNode[0]);
+	});
+	$("#contextMenuPaste").click(function(e){	
+		alert("Under Construction");
+		//console.log( e.originalEvent.clipboardData.getData('text') );
+		//document.execCommand('paste');
+		//storeLocally(selectedNode[0]);
+		var event = $.Event('paste');
+		selectedNode.triggerHandler(event); 
+	});	
+	
+    function cssInit(){
+      $(".editorArea").each(function(){
+        var skickyWrapper = $(this).parent();
+        var editorHeader = skickyWrapper.find(".stickyHeader");
+        var editorHeight =  skickyWrapper.height()-editorHeader.height()-30;
+        $(this).height( editorHeight );
+      });
+    }	
+	getLocally();
+    stickyInit();
+	function stickyInit(){
+		$( ".stickyNote:not('.ui-draggable')" ).draggable({ 
+			handle: ".stickyHeader",
+			stack: ".stickyNote",
+			stop: throttle(function(e){
+				storeLocally(e);
+			})
+		}).resizable({ 
+			resize: function(e){
+				var h = $(this).height()-heightDiff;
+				$(this).find(".editorArea").height(h);
+				var w = $(this).width()-widthDiff;
+				$(this).find(".editorArea").width(w);
+			},
+			stop: throttle(function(e){
+				storeLocally(e);
+			})
+		});
+			cssInit();
+	}  
+	function getLocally(){
+		var stickyStore = JSON.parse(localStorage.getItem("stickyStore")) || [];
+		console.log(stickyStore);
+		for( var i = 0; i < stickyStore.length; i++ ){
+		  if( i == 0 ){
+				var stickyNode = $(".stickyNote:first");
+		  }
+		  else{
+			stickyNode.find(".addNew").trigger("click");
+			stickyNode = $("#wrapper").find(".stickyNote:last");
+		  }
+		  stickyNode.find(".editorArea").html( stickyStore[i].htmlVal ).height(stickyStore[i].height-heightDiff).height(stickyStore[i].width-widthDiff);
+		  stickyNode.find(".stickyHeader").text( stickyStore[i].title || defaultTitle );
+		  stickyNode.css({"top": stickyStore[i].top, "left": stickyStore[i].left, "width": stickyStore[i].width, "height": stickyStore[i].height}); 
+		  stickyNode.attr("data-id", stickyStore[i].UUID || UUID() );
+		  var thisType = stickyStore[i].color || defaultColor;
+		  stickyNode.attr("data-color", thisType ).css("background-color", thisType);
+		}
+	}
+	function storeLocally(e){
+		var thisTarget  = e.target || e;
+		var targetElem = $(thisTarget);
+		if(!targetElem.hasClass("stickyNote")){
+		  targetElem = $(targetElem).parents(".stickyNote");
+		}
+		//var stickyNotes = $("#wrapper").find(".stickyNote");
+		var stickyNotes = targetElem;
+		var stickyId = stickyNotes.attr("data-id");
+		var stickyColor = stickyNotes.attr("data-color");
+		var tempObj = { 
+		  "htmlVal": stickyNotes.find(".editorArea").html(),
+		  "title": stickyNotes.find(".stickyHeader").text(),
+		  "UUID": stickyId,
+		  "color": stickyColor,
+		  "top": stickyNotes.css("top"),
+		  "left": stickyNotes.css("left"),
+		  "width": stickyNotes.width(),
+		  "height": stickyNotes.height()
+		};
+		var stickyStore = JSON.parse(localStorage.getItem("stickyStore"));
+		if(targetElem.hasClass("removeNote")){
+			stickyStore = deleteObjInArr(stickyId, tempObj, stickyStore);
+		}
+		else{	stickyStore = changeObjInArr(stickyId, tempObj, stickyStore);	}
+		console.log(stickyStore);
+		localStorage.setItem("stickyStore", JSON.stringify(stickyStore));
+	}    
+	function changeObjInArr( id, obj, arr ) {
+	   var isPresent = false;
+	   for (var i = 0; i < arr.length; i++) {
+		 if (arr[i].UUID == id) {
+			arr[i] = obj;
+			isPresent = true;
+			break; //Stop this loop, we found it!
+		 }
+	   }
+	   if( !isPresent ){
+		 arr.push(obj);
+	   }
+	   return arr;
+	}   
+	function deleteObjInArr( id, obj, arr ) {
+	   for (var i = 0; i < arr.length; i++) {
+		 if (arr[i].UUID == id) {
+			arr.splice(i, 1);
+			break; //Stop this loop, we found it!
+		 }
+	   }
+	   return arr;
+	} 
+  /* Refer: http://stackoverflow.com/a/4367037 */
+	function throttle(f, delay){
+		var timer = null;
+		return function(){
+			var context = this, args = arguments;
+			clearTimeout(timer);
+			timer = window.setTimeout(function(){
+				f.apply(context, args);
+			},
+			delay || 500);
+		};
+	}  
+	function UUID(){
+		var d = new Date();
+		var UID = d.getYear() +""+ d.getMonth() +""+ d.getDate() +""+ d.getHours() +""+ d.getMinutes() +""+ d.getSeconds() +""+ d.getMilliseconds() +""+ Math.round( Math.random()*10 );
+		return UID;
+	}
+  /* http://stackoverflow.com/a/3806004/4827853 */	
+	function selectAll(){
+		div = selectedNode.find(".editorArea")[0]
+		var sel, range;
+        if (window.getSelection && document.createRange) {
+            range = document.createRange();
+            range.selectNodeContents(div);
+            sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } else if (document.body.createTextRange) {
+            range = document.body.createTextRange();
+            range.moveToElementText(div);
+            range.select();
+        }
+	}
+	function replaceSelectedText(replacementText) {
+		var sel, range;
+		if (window.getSelection) {
+			sel = window.getSelection();
+			if (sel.rangeCount) {
+				range = sel.getRangeAt(0);
+				range.deleteContents();
+				range.insertNode(document.createTextNode(replacementText));
+			}
+		} else if (document.selection && document.selection.createRange) {
+			range = document.selection.createRange();
+			range.text = replacementText;
+		}
+	}
+	function hideClickedElseWhere(divNode){
+		/* http://stackoverflow.com/a/7385673/4827853 */
+		$(document).mouseup(function (e){
+			var container = divNode;
+			if (!container.is(e.target) // if the target of the click isn't the container...
+				&& container.has(e.target).length === 0) // ... nor a descendant of the container
+			{
+				container.hide();
+			}
+		});
+	}
+});
+</script>
+</head>
+<body style="cursor: auto;">
+	<div id="wrapper">
+	  <div class="stickyNote">  
+		<span class="addNew">+</span>
+		<span class="deleteNote">x</span>
+		<div class="stickyHeader">
+		Sticky Node
+		</div>
+		<div class="editorArea" contenteditable="true"  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+		 Sample Sticky Note
+		</div>
+	  </div>
+	</div>
+	<ul id="customContextMenu">
+		<li id="contextMenuTitle" onmousedown="return false">Title</li>
+		<li id="contextMenuCut" onmousedown="return false">Cut</li>
+		<li id="contextMenuCopy" onmousedown="return false">Copy</li>
+		<li id="contextMenuPaste" class="disabled" onmousedown="return false">Paste</li>
+		<li id="contextMenuDelete" onmousedown="return false">Delete</li>
+		<li id="contextMenuSelect">Select All</li>
+		<li class="contextMenuColor" data-type="#f5e8e8">Red</li>
+		<li class="contextMenuColor" data-type="#e8f5e8">Green</li>
+		<li class="contextMenuColor" data-type="#e8e8f5">Blue</li>
+		<li class="contextMenuColor" data-type="#f5f5f5">Grey</li>
+	</ul>
+</body>
+</html>
+
+
+
+
+
+
